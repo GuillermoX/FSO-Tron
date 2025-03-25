@@ -51,6 +51,7 @@
 #include <stdio.h>		/* incloure definicions de funcions estandard */
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/wait.h>
 #include "winsuport.h"		/* incloure definicions de funcions propies */
 
 				/* definir estructures d'informacio */
@@ -80,6 +81,9 @@ int retard;		/* valor del retard de moviment, en mil.lisegons */
 pos *p_usu;			/* taula de posicions que van recorrent */
 pos *p_opo;			/* els jugadors */
 int n_usu = 0, n_opo = 0;	/* numero d'entrades en les taules de pos. */
+
+
+int fi1, fi2;		/* variables finalització de tron */
 
 /* funcio per esborrar totes les posicions anteriors, sigui de l'usuari o */
 /* de l'oponent */
@@ -122,105 +126,121 @@ void inicialitza_joc(void)
 
 /* funcio per moure un oponent una posicio; retorna 1 si l'oponent xoca */
 /* contra alguna cosa, 0 altrament					*/
-int mou_oponent(void)
+void mou_oponent(int index)
 {
   char cars;
   tron seg;
   int k, vk, nd, vd[3];
   int canvi = 0;
   int retorn = 0;
- 
-  seg.f = opo.f + df[opo.d];	/* calcular seguent posicio */
-  seg.c = opo.c + dc[opo.d];
-  cars = win_quincar(seg.f,seg.c);	/* calcula caracter seguent posicio */
-  if (cars != ' ')			/* si seguent posicio ocupada */
-     canvi = 1;		/* anotar que s'ha de produir un canvi de direccio */
-  else
-    if (varia > 0)	/* si hi ha variabilitat */
-    { k = rand() % 10;		/* prova un numero aleatori del 0 al 9 */
-      if (k < varia) canvi = 1;	/* possible canvi de direccio */
-    }
   
-  if (canvi)		/* si s'ha de canviar de direccio */
-  {
-    nd = 0;
-    for (k=-1; k<=1; k++)	/* provar direccio actual i dir. veines */
-    {
-	vk = (opo.d + k) % 4;		/* nova direccio */
-	if (vk < 0) vk += 4;		/* corregeix negatius */
-	seg.f = opo.f + df[vk];		/* calcular posicio en la nova dir.*/
-	seg.c = opo.c + dc[vk];
-	cars = win_quincar(seg.f,seg.c);/* calcula caracter seguent posicio */
-	if (cars == ' ')
-	{ vd[nd] = vk;			/* memoritza com a direccio possible */
-	  nd++;				/* anota una direccio possible mes */
+  do
+  { 
+ 	seg.f = opo.f + df[opo.d];	/* calcular seguent posicio */
+ 	seg.c = opo.c + dc[opo.d];
+ 	cars = win_quincar(seg.f,seg.c);	/* calcula caracter seguent posicio */
+ 	if (cars != ' ')			/* si seguent posicio ocupada */
+ 	   canvi = 1;		/* anotar que s'ha de produir un canvi de direccio */
+ 	else
+ 	  if (varia > 0)	/* si hi ha variabilitat */
+ 	  { k = rand() % 10;		/* prova un numero aleatori del 0 al 9 */
+ 	    if (k < varia) canvi = 1;	/* possible canvi de direccio */
+ 	  }
+ 	
+ 	if (canvi)		/* si s'ha de canviar de direccio */
+ 	{
+ 	  nd = 0;
+ 	  for (k=-1; k<=1; k++)	/* provar direccio actual i dir. veines */
+ 	  {
+ 	      vk = (opo.d + k) % 4;		/* nova direccio */
+ 	      if (vk < 0) vk += 4;		/* corregeix negatius */
+ 	      seg.f = opo.f + df[vk];		/* calcular posicio en la nova dir.*/
+ 	      seg.c = opo.c + dc[vk];
+ 	      cars = win_quincar(seg.f,seg.c);/* calcula caracter seguent posicio */
+ 	      if (cars == ' ')
+ 	      { vd[nd] = vk;			/* memoritza com a direccio possible */
+ 	        nd++;				/* anota una direccio possible mes */
+ 	      }
+ 	  }
+ 	  if (nd == 0)			/* si no pot continuar, */
+ 		retorn = 1;		/* xoc: ha perdut l'oponent! */
+ 	  else
+ 	  { if (nd == 1)			/* si nomes pot en una direccio */
+ 		opo.d = vd[0];			/* li assigna aquesta */
+ 	    else				/* altrament */
+ 	  	opo.d = vd[rand() % nd];	/* segueix una dir. aleatoria */
+ 	  }
+ 	}
+ 	if (retorn == 0)		/* si no ha col.lisionat amb res */
+ 	{
+ 	  opo.f = opo.f + df[opo.d];			/* actualitza posicio */
+ 	  opo.c = opo.c + dc[opo.d];
+ 	  win_escricar(opo.f,opo.c,'1',INVERS);	/* dibuixa bloc oponent */
+ 	  p_opo[n_opo].f = opo.f;			/* memoritza posicio actual */
+ 	  p_opo[n_opo].c = opo.c;
+ 	  n_opo++;
+ 	}
+ 	else
+	{
+		esborrar_posicions(p_opo, n_opo);
+		fi2 = 1;
 	}
-    }
-    if (nd == 0)			/* si no pot continuar, */
-  	retorn = 1;		/* xoc: ha perdut l'oponent! */
-    else
-    { if (nd == 1)			/* si nomes pot en una direccio */
-  	opo.d = vd[0];			/* li assigna aquesta */
-      else				/* altrament */
-    	opo.d = vd[rand() % nd];	/* segueix una dir. aleatoria */
-    }
-  }
-  if (retorn == 0)		/* si no ha col.lisionat amb res */
-  {
-    opo.f = opo.f + df[opo.d];			/* actualitza posicio */
-    opo.c = opo.c + dc[opo.d];
-    win_escricar(opo.f,opo.c,'1',INVERS);	/* dibuixa bloc oponent */
-    p_opo[n_opo].f = opo.f;			/* memoritza posicio actual */
-    p_opo[n_opo].c = opo.c;
-    n_opo++;
-  }
-  else esborrar_posicions(p_opo, n_opo);
+	
+	win_retard(retard);
+  }while(!fi1 && !fi2);
 
-  return(retorn);
 }
 
 /* funcio per moure l'usuari una posicio, en funcio de la direccio de   */
 /* moviment actual; retorna -1 si s'ha premut RETURN, 1 si ha xocat     */
 /* contra alguna cosa, i 0 altrament */
-int mou_usuari(void)
+void mou_usuari(void)
 {
+
   char cars;
   tron seg;
   int tecla, retorn;
-  
-  retorn = 0;
-  tecla = win_gettec();
-  if (tecla != 0)
-   switch (tecla)	/* modificar direccio usuari segons tecla */
-   {
-    case TEC_AMUNT:	usu.d = 0; break;
-    case TEC_ESQUER:	usu.d = 1; break;
-    case TEC_AVALL:	usu.d = 2; break;
-    case TEC_DRETA:	usu.d = 3; break;
-    case TEC_RETURN:	retorn = -1; break;
-   }
-  seg.f = usu.f + df[usu.d];	/* calcular seguent posicio */
-  seg.c = usu.c + dc[usu.d];
-  cars = win_quincar(seg.f,seg.c);	/* calcular caracter seguent posicio */
-  if (cars == ' ')			/* si seguent posicio lliure */
+  do
   {
-    usu.f = seg.f; usu.c = seg.c;		/* actualitza posicio */
-    win_escricar(usu.f,usu.c,'0',INVERS);	/* dibuixa bloc usuari */
-    p_usu[n_usu].f = usu.f;		/* memoritza posicio actual */
-    p_usu[n_usu].c = usu.c;
-    n_usu++;
-  }
-  else
-  { esborrar_posicions(p_usu, n_usu);
-    retorn = 1;
-  }
-  return(retorn);
+ 	
+ 	retorn = 0;
+ 	tecla = win_gettec();
+ 	if (tecla != 0)
+ 	 switch (tecla)	/* modificar direccio usuari segons tecla */
+ 	 {
+ 	  case TEC_AMUNT:	usu.d = 0; break;
+ 	  case TEC_ESQUER:	usu.d = 1; break;
+ 	  case TEC_AVALL:	usu.d = 2; break;
+ 	  case TEC_DRETA:	usu.d = 3; break;
+ 	  case TEC_RETURN:	retorn = -1; break;
+ 	 }
+ 	seg.f = usu.f + df[usu.d];	/* calcular seguent posicio */
+ 	seg.c = usu.c + dc[usu.d];
+ 	cars = win_quincar(seg.f,seg.c);	/* calcular caracter seguent posicio */
+ 	if (cars == ' ')			/* si seguent posicio lliure */
+ 	{
+ 	  usu.f = seg.f; usu.c = seg.c;		/* actualitza posicio */
+ 	  win_escricar(usu.f,usu.c,'0',INVERS);	/* dibuixa bloc usuari */
+ 	  p_usu[n_usu].f = usu.f;		/* memoritza posicio actual */
+ 	  p_usu[n_usu].c = usu.c;
+ 	  n_usu++;
+ 	}
+ 	else
+ 	{ 
+	  esborrar_posicions(p_usu, n_usu);
+	  fi1 = 1;
+ 	}
+
+
+	win_retard(retard);
+  } while(!fi1 && !fi2 && !retorn);
+
 }
 
 /* programa principal				    */
 int main(int n_args, const char *ll_args[])
 {
-  int fi1, fi2, retwin;		/* variables locals */
+  int retwin;
 
   srand(getpid());		/* inicialitza numeros aleatoris */
 
@@ -275,20 +295,26 @@ int main(int n_args, const char *ll_args[])
   inicialitza_joc();
   fi1 = 0;
   fi2 = 0;
-  do			/********** bucle principal del joc **********/
+ 	
+  pid_t pid = fork(); 
+  if(pid == 0)
   {
-	fi1 = mou_usuari();
-	fi2 = mou_oponent();
-	win_retard(retard);
-  } while (!fi1 && !fi2);
+	mou_oponent(1);
+  }
+  else
+  {
+	mou_usuari();
+	waitpid(pid, NULL, 0);
+	
+	win_fi();				/* tanca les curses */
+	free(p_usu);
+	free(p_opo);	  	 /* allibera la memoria dinamica obtinguda */
+	
+	if (fi1 == -1) printf("S'ha aturat el joc amb tecla RETURN!\n\n");
+	else { if (fi2) printf("Ha guanyat l'usuari!\n\n");
+		else printf("Ha guanyat l'ordinador!\n\n"); }	
+  }
 
-  win_fi();				/* tanca les curses */
-  free(p_usu);
-  free(p_opo);	  	 /* allibera la memoria dinamica obtinguda */
-
-  if (fi1 == -1) printf("S'ha aturat el joc amb tecla RETURN!\n\n");
-  else { if (fi2) printf("Ha guanyat l'usuari!\n\n");
-	 else printf("Ha guanyat l'ordinador!\n\n"); }
 
   return(0);
 }
