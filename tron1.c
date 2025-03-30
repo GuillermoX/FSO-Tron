@@ -54,6 +54,8 @@
 #include <sys/wait.h>
 #include "winsuport.h"		/* incloure definicions de funcions propies */
 
+#define MAX_OPO 9		/* màxim nombre d'oponents */
+
 				/* definir estructures d'informacio */
 typedef struct {		/* per un tron (usuari o oponent) */
 	int f;				/* posicio actual: fila */
@@ -70,17 +72,20 @@ typedef struct {		/* per una entrada de la taula de posicio */
 int n_fil, n_col;		/* dimensions del camp de joc */
 
 tron usu;   	   		/* informacio de l'usuari */
-tron opo;			/* informacio de l'oponent */
+tron opo[MAX_OPO];		/* informacio dels oponents */
+int num_opo = 0;		/* nombre d'oponents a crear */
 
 int df[] = {-1, 0, 1, 0};	/* moviments de les 4 direccions possibles */
 int dc[] = {0, -1, 0, 1};	/* dalt, esquerra, baix, dreta */
 
 int varia;		/* valor de variabilitat dels oponents [0..9] */
 int retard;		/* valor del retard de moviment, en mil.lisegons */
+int retard_min, retard_max;	/*rang minim-maxim del retard de moviment d'un oponent*/
 
 pos *p_usu;			/* taula de posicions que van recorrent */
-pos *p_opo;			/* els jugadors */
-int n_usu = 0, n_opo = 0;	/* numero d'entrades en les taules de pos. */
+pos *p_opo[MAX_OPO];			/* els jugadors */
+int n_usu = 0;			/* numero d'entrades en les taules de pos del usuari */
+int n_opo[MAX_OPO];		/* numero d'entrades de la taula de pos de cada oponent */
 
 
 int fi1, fi2;		/* variables finalització de tron */
@@ -111,13 +116,19 @@ void inicialitza_joc(void)
   p_usu[n_usu].c = usu.c;
   n_usu++;
 
-  opo.f = (n_fil-1)/2;
-  opo.c = (n_col*3)/4;		/* fixa posicio i direccio inicial oponent */
-  opo.d = 1;
-  win_escricar(opo.f,opo.c,'1',INVERS);	/* escriu la primer posicio oponent */
-  p_opo[n_opo].f = opo.f;		/* memoritza posicio inicial */
-  p_opo[n_opo].c = opo.c;
-  n_opo++;
+  for(int i = 0; i < num_opo; i++)
+  {
+	  	n_opo[i] = 0;	
+		
+		float fila_div = ((float)(n_fil-1)/(float)(num_opo+1));
+ 		opo[i].f = fila_div + fila_div*i;
+ 		opo[i].c = (n_col*3)/4;		/* fixa posicio i direccio inicial oponent */
+ 		opo[i].d = 1;
+ 		win_escricar(opo[i].f,opo[i].c,'1',INVERS);	/* escriu la primer posicio oponent */
+ 		p_opo[i][n_opo[i]].f = opo[i].f;		/* memoritza posicio inicial */
+ 		p_opo[i][n_opo[i]].c = opo[i].c;
+		n_opo[i] ++;
+  }
 
   sprintf(strin,"Tecles: \'%c\', \'%c\', \'%c\', \'%c\', RETURN-> sortir\n",
 		TEC_AMUNT, TEC_AVALL, TEC_DRETA, TEC_ESQUER);
@@ -136,8 +147,8 @@ void mou_oponent(int index)
   
   do
   { 
- 	seg.f = opo.f + df[opo.d];	/* calcular seguent posicio */
- 	seg.c = opo.c + dc[opo.d];
+ 	seg.f = opo[index].f + df[opo[index].d];	/* calcular seguent posicio */
+ 	seg.c = opo[index].c + dc[opo[index].d];
  	cars = win_quincar(seg.f,seg.c);	/* calcula caracter seguent posicio */
  	if (cars != ' ')			/* si seguent posicio ocupada */
  	   canvi = 1;		/* anotar que s'ha de produir un canvi de direccio */
@@ -152,10 +163,10 @@ void mou_oponent(int index)
  	  nd = 0;
  	  for (k=-1; k<=1; k++)	/* provar direccio actual i dir. veines */
  	  {
- 	      vk = (opo.d + k) % 4;		/* nova direccio */
+ 	      vk = (opo[index].d + k) % 4;		/* nova direccio */
  	      if (vk < 0) vk += 4;		/* corregeix negatius */
- 	      seg.f = opo.f + df[vk];		/* calcular posicio en la nova dir.*/
- 	      seg.c = opo.c + dc[vk];
+ 	      seg.f = opo[index].f + df[vk];		/* calcular posicio en la nova dir.*/
+ 	      seg.c = opo[index].c + dc[vk];
  	      cars = win_quincar(seg.f,seg.c);/* calcula caracter seguent posicio */
  	      if (cars == ' ')
  	      { vd[nd] = vk;			/* memoritza com a direccio possible */
@@ -166,27 +177,28 @@ void mou_oponent(int index)
  		retorn = 1;		/* xoc: ha perdut l'oponent! */
  	  else
  	  { if (nd == 1)			/* si nomes pot en una direccio */
- 		opo.d = vd[0];			/* li assigna aquesta */
+ 		opo[index].d = vd[0];			/* li assigna aquesta */
  	    else				/* altrament */
- 	  	opo.d = vd[rand() % nd];	/* segueix una dir. aleatoria */
+ 	  	opo[index].d = vd[rand() % nd];	/* segueix una dir. aleatoria */
  	  }
  	}
  	if (retorn == 0)		/* si no ha col.lisionat amb res */
  	{
- 	  opo.f = opo.f + df[opo.d];			/* actualitza posicio */
- 	  opo.c = opo.c + dc[opo.d];
- 	  win_escricar(opo.f,opo.c,'1',INVERS);	/* dibuixa bloc oponent */
- 	  p_opo[n_opo].f = opo.f;			/* memoritza posicio actual */
- 	  p_opo[n_opo].c = opo.c;
- 	  n_opo++;
+ 	  opo[index].f = opo[index].f + df[opo[index].d];			/* actualitza posicio */
+ 	  opo[index].c = opo[index].c + dc[opo[index].d];
+ 	  win_escricar(opo[index].f,opo[index].c,index+1+'0',INVERS);	/* dibuixa bloc oponent */
+ 	  p_opo[index][n_opo[index]].f = opo[index].f;			/* memoritza posicio actual */
+ 	  p_opo[index][n_opo[index]].c = opo[index].c;
+ 	  n_opo[index]++;
  	}
  	else
 	{
-		esborrar_posicions(p_opo, n_opo);
+		esborrar_posicions(p_opo[index], n_opo[index]);
 		fi2 = 1;
 	}
 	
-	win_retard(retard);
+	int retard_aleat = retard_min + (rand() % retard_max); 		
+	win_retard(retard_aleat);
   }while(!fi1 && !fi2);
 
 }
@@ -243,25 +255,42 @@ int main(int n_args, const char *ll_args[])
   int retwin;
 
   srand(getpid());		/* inicialitza numeros aleatoris */
+  setbuf(stdout, NULL); 
 
-  if ((n_args != 2) && (n_args !=3))
-  {	fprintf(stderr,"Comanda: ./tron0 variabilitat [retard]\n");
+  if ((n_args < 2) || (n_args > 5))
+  {	fprintf(stderr,"Comanda: ./tron0 variabilitat [retard] [nombre d'enemics]\n");
   	fprintf(stderr,"         on \'variabilitat\' indica la frequencia de canvi de direccio\n");
   	fprintf(stderr,"         de l'oponent: de 0 a 3 (0- gens variable, 3- molt variable),\n");
-  	fprintf(stderr,"         i \'retard\' es el numero de mil.lisegons que s'espera entre dos\n");
+  	fprintf(stderr,"         \'retard\' es el numero de mil.lisegons que s'espera entre dos\n");
   	fprintf(stderr,"         moviments de cada jugador (minim 10, maxim 1000, 100 per defecte).\n");
+  	fprintf(stderr,"         \'nombre d'enemics\' es el numero d'enemics (per defecte 1).\n");
   	exit(1);
   }
-  varia = atoi(ll_args[1]);	/* obtenir parametre de variabilitat */
-  if (varia < 0) varia = 0;	/* verificar limits */
-  if (varia > 3) varia = 3;
 
-  if (n_args == 3)		/* si s'ha especificat parametre de retard */
-  {	retard = atoi(ll_args[2]);	/* convertir-lo a enter */
+  num_opo = atoi(ll_args[1]);
+  if (num_opo < 1) num_opo = 1;
+  if (num_opo > MAX_OPO) num_opo = MAX_OPO;
+
+
+  if (n_args >= 3)
+  {
+ 	varia = atoi(ll_args[2]);	/* obtenir parametre de variabilitat */
+ 	if (varia < 0) varia = 0;	/* verificar limits */
+ 	if (varia > 3) varia = 3;
+  }
+  else varia = 0;
+	
+  int log_file = 0;			/* booleà per saber si hi ha un fitxer Log */
+  if (n_args >= 4) log_file = 1;
+
+  if (n_args >= 5)		/* si s'ha especificat parametre de retard */
+  {	retard = atoi(ll_args[4]);	/* convertir-lo a enter */
   	if (retard < 10) retard = 10;	/* verificar limits */
   	if (retard > 1000) retard = 1000;
   }
   else retard = 100;		/* altrament, fixar retard per defecte */
+  retard_min = retard;		/* es fixen els retards mínim i màxim pels oponents*/
+  retard_max = retard + retard/3;
 
   printf("Joc del Tron\n\tTecles: \'%c\', \'%c\', \'%c\', \'%c\', RETURN-> sortir\n",
 		TEC_AMUNT, TEC_AVALL, TEC_DRETA, TEC_ESQUER);
@@ -281,39 +310,76 @@ int main(int n_args, const char *ll_args[])
      }
      exit(2);
   }
+	
 
   p_usu = calloc(n_fil*n_col/2, sizeof(pos));	/* demana memoria dinamica */
-  p_opo = calloc(n_fil*n_col/2, sizeof(pos));	/* per a les posicions ant. */
-  if (!p_usu || !p_opo)	/* si no hi ha prou memoria per als vectors de pos. */
-  { win_fi();				/* tanca les curses */
-    if (p_usu) free(p_usu);
-    if (p_opo) free(p_opo);	   /* allibera el que hagi pogut obtenir */
-    fprintf(stderr,"Error en alocatacion de memoria dinamica.\n");
-    exit(3);
+  for(int i = 0; i < num_opo; i++)
+  {
+ 	p_opo[i] = calloc(n_fil*n_col/2, sizeof(pos));	/* per a les posicions ant. */
+ 	if (!p_usu || !p_opo[i])	/* si no hi ha prou memoria per als vectors de pos. */
+ 	{ win_fi();				/* tanca les curses */
+ 	  if (p_usu) free(p_usu);
+ 	  if (p_opo[i]) free(p_opo[i]);	   /* allibera el que hagi pogut obtenir */
+ 	  fprintf(stderr,"Error en alocatacion de memoria dinamica.\n");
+ 	  exit(3);
+ 	}
   }
 			/* Fins aqui tot ha anat be! */
+
   inicialitza_joc();
-  fi1 = 0;
+  fi1 = 0;		/*S'inicien les variables de finalització*/
   fi2 = 0;
- 	
-  pid_t pid = fork(); 
-  if(pid == 0)
-  {
-	mou_oponent(1);
-  }
-  else
-  {
-	mou_usuari();
-	waitpid(pid, NULL, 0);
 	
-	win_fi();				/* tanca les curses */
-	free(p_usu);
-	free(p_opo);	  	 /* allibera la memoria dinamica obtinguda */
-	
-	if (fi1 == -1) printf("S'ha aturat el joc amb tecla RETURN!\n\n");
-	else { if (fi2) printf("Ha guanyat l'usuari!\n\n");
-		else printf("Ha guanyat l'ordinador!\n\n"); }	
+  FILE *fd;  
+  if(log_file)
+  {
+
+ 	fd = fopen(ll_args[3], "w");	/* obrir un canal amb l'arxiu on escriuran els fills */
+ 	if(fd == NULL)
+ 	{
+ 	        perror("Unable to open file");
+ 	        return 1;
+ 	}
+ 	setbuf(fd, NULL);	/* deshabilitem el buffer de l'escriptura a l'arxiu */
   }
+
+ 
+  for(int i = 0; i < num_opo; i++)	/*Per cada tron oponent*/
+  {	 
+  	pid_t pid = fork(); 		/*Es crea un process nou*/
+
+ 	if(pid == 0)			/*Si es el process fill (el oponent)*/
+ 	{
+ 	      mou_oponent(i);		
+	      if(log_file)
+	      {
+	     	/* el process escriu informació al fitxer abans de finalitzar */
+	     	fprintf(fd, "Fill id: %d, index: %d\n", getpid(), i+1);	
+	     	fprintf(fd, "Longitud: %d\n", n_opo[i]);
+	     	fprintf(fd, "Causa de mort: TODO\n\n");
+	      }
+	      exit(1);			/*Quan l'oponent mor s'acaba el process fill oponent*/
+ 	}
+  } 
+  
+  
+  mou_usuari();				/*Per l'usuari s'executa un bucle de moviment*/
+  for(int i = num_opo; i > 0; i--)	/*Quan mor l'usuari es comprova si han mort tots els enemics*/
+  {	
+  	wait(NULL);
+  }
+  
+  win_fi();				/* tanca les curses */
+  free(p_usu);
+  for(int i = 0; i < num_opo; i++)
+  {
+  	free(p_opo[i]);	  	 /* allibera la memoria dinamica obtinguda */
+  }
+  
+  if (fi1 == -1) printf("S'ha aturat el joc amb tecla RETURN!\n\n");
+  else { if (fi2) printf("Ha guanyat l'usuari!\n\n");
+  	else printf("Ha guanyat l'ordinador!\n\n"); }	
+ 
 
 
   return(0);
