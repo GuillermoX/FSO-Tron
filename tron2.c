@@ -52,8 +52,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
-#include "winsuport.h"		/* incloure definicions de funcions propies */
+#include "winsuport2.h"		/* incloure definicions de funcions propies */
 #include "semafor.h"		/* incloure les funcions dels semafors */
+#include "memoria.h"
 
 #define MAX_OPO 9		/* màxim nombre d'oponents */
 
@@ -67,7 +68,12 @@ typedef struct {		/* per un tron (usuari o oponent) */
 typedef struct {		/* per una entrada de la taula de posicio */
 	int f;
 	int c;
-} pos;
+}pos;
+
+typedef struct {		/* variables de finalització compartides */
+	int fi1;
+	int fi2;
+} final_t;
 
 /* variables globals */
 int n_fil, n_col;		/* dimensions del camp de joc */
@@ -91,13 +97,18 @@ int n_opo[MAX_OPO];		/* numero d'entrades de la taula de pos de cada oponent */
 /* semafors */
 int id_sem_pant;		/* ID del semafor d'accés a pantalla */
 int id_sem_fit; 		/* ID del semafor d'accés al fitxer */
+int id_sem_var;
 
+/* memoria compartida */
+int id_map_mem;
+void *p_map;
+int id_final_mem;
 
 int fi1, fi2;		/* variables finalització de tron */
 
 /* funcio per esborrar totes les posicions anteriors, sigui de l'usuari o */
 /* de l'oponent */
-void esborrar_posicions(pos p_pos[], int n_pos)
+void esborrar_posicions(pos p_pos[], int n_pos, int usuari)
 {
   int i;
   
@@ -107,6 +118,7 @@ void esborrar_posicions(pos p_pos[], int n_pos)
     /* vvv secció crítica d'escriptura de pantalla vvv*/
     waitS(id_sem_pant);
     win_escricar(p_pos[i].f,p_pos[i].c,' ',NO_INV);	/* esborra una pos. */
+    if(usuari) win_update();
     signalS(id_sem_pant);
     /* ^^^ secció crítica d'escriptura de pantalla ^^^*/
     win_retard(10);		/* un petit retard per simular el joc real */
@@ -154,6 +166,7 @@ void mou_oponent(int index)
   int k, vk, nd, vd[3];
   int canvi = 0;
   int retorn = 0;
+  final_t *fi = map_mem(id_final_mem);
   
   do
   { 
@@ -207,13 +220,19 @@ void mou_oponent(int index)
  	}
  	else
 	{
-		esborrar_posicions(p_opo[index], n_opo[index]);
-		fi2 = 1;
+		/* vvv Secció crítica variables globals vvv */
+		waitS(id_sem_var);
+		fi->fi2 = fi->fi2-1;
+		signalS(id_sem_var);
+		/* ^^^----------------------------------^^^ */
 	}
 	
 	int retard_aleat = retard_min + (rand() % (retard_max-retard_min)); 		
 	win_retard(retard_aleat);
-  }while(!fi1 && !fi2);
+  }while((fi->fi1 == 0) && (fi->fi2 != 0) && (retorn == 0));
+
+
+  esborrar_posicions(p_opo[index], n_opo[index], 0);
 
 }
 
@@ -222,7 +241,7 @@ void mou_oponent(int index)
 /* contra alguna cosa, i 0 altrament */
 void mou_usuari(void)
 {
-
+  final_t *fi = map_mem(id_final_mem);
   char cars;
   tron seg;
   int tecla, retorn;
@@ -238,7 +257,7 @@ void mou_usuari(void)
  	  case TEC_ESQUER:	usu.d = 1; break;
  	  case TEC_AVALL:	usu.d = 2; break;
  	  case TEC_DRETA:	usu.d = 3; break;
- 	  case TEC_RETURN:	retorn = -1; break;
+ 	  case TEC_RETURN:	fi->fi1 = 1; break;
  	 }
  	seg.f = usu.f + df[usu.d];	/* calcular seguent posicio */
  	seg.c = usu.c + dc[usu.d];
@@ -258,13 +277,18 @@ void mou_usuari(void)
  	}
  	else
  	{ 
-	  esborrar_posicions(p_usu, n_usu);
-	  fi1 = 1;
+	  /* vvv Secció crítica variables globals vvv */
+	  waitS(id_sem_var);
+	  fi->fi1 = 1;
+	  signalS(id_sem_var);
+	  /* ^^^ ------------------------------- ^^^*/
  	}
 
-
+	win_update();
 	win_retard(retard);
-  } while(!fi1 && !fi2 && !retorn);
+  } while((fi->fi1 == 0) && (fi->fi2 != 0) && !retorn);
+
+  esborrar_posicions(p_usu, n_usu, 1);
 
 }
 
@@ -336,7 +360,12 @@ int main(int n_args, const char *ll_args[])
      }
      exit(2);
   }
-	
+
+  /* si s'ha creat el taulell reservem memoria compartida */
+  id_map_mem = ini_mem(retwin);
+  p_map = map_mem(id_map_mem);
+  win_set(p_map, n_fil, n_col);
+  
 
   p_usu = calloc(n_fil*n_col/2, sizeof(pos));	/* demana memoria dinamica */
   for(int i = 0; i < num_opo; i++)
@@ -353,8 +382,11 @@ int main(int n_args, const char *ll_args[])
 			/* Fins aqui tot ha anat be! */
 
   inicialitza_joc();
-  fi1 = 0;		/*S'inicien les variables de finalització*/
-  fi2 = 0;
+
+  id_final_mem = ini_mem(sizeof(final_t)); 
+  final_t *fi = map_mem(id_final_mem);
+  fi->fi1 = 0;		/*S'inicien les variables de finalització*/
+  fi->fi2 = num_opo;
 	
   FILE *fd;  
   if(log_file)
@@ -364,13 +396,17 @@ int main(int n_args, const char *ll_args[])
  	if(fd == NULL)
  	{
  	        perror("Unable to open file");
- 	        return 1;
+ 	        log_file = 0;
  	}
- 	setbuf(fd, NULL);	/* deshabilitem el buffer de l'escriptura a l'arxiu */
+	else
+	{	
+ 		setbuf(fd, NULL);	/* deshabilitem el buffer de l'escriptura a l'arxiu */
+	}
   }
 	
   id_sem_pant = ini_sem(1);		/*inicialitzem el semafor de la pantalla */
   id_sem_fit = ini_sem(1);
+  id_sem_var = ini_sem(1);
 	
   pid_t pid[MAX_OPO];			/* pid de cada process oponent */
 
@@ -388,7 +424,9 @@ int main(int n_args, const char *ll_args[])
 		waitS(id_sem_fit);
 	     	fprintf(fd, "Fill id: %d, index: %d\n", getpid(), i+1);	
 	     	fprintf(fd, "Longitud: %d\n", n_opo[i]);
-	     	fprintf(fd, "Causa de mort: TODO\n\n");
+	     	fprintf(fd, "Causa de finalització:\n");	
+		if(fi->fi1 == 0) fprintf(fd, "Mort propia\n\n");
+		else fprintf(fd, "Mort jugador humà\n\n");
 		signalS(id_sem_fit);
 		/* ^^^ secció crítica accés al fitxer ^^^ */
 	      }
@@ -412,7 +450,7 @@ int main(int n_args, const char *ll_args[])
   }
   
   if (fi1 == -1) printf("S'ha aturat el joc amb tecla RETURN!\n\n");
-  else { if (fi2) printf("Ha guanyat l'usuari!\n\n");
+  else { if (fi->fi1 == 0) printf("Ha guanyat l'usuari!\n\n");
   	else printf("Ha guanyat l'ordinador!\n\n"); }	
  
 
