@@ -90,6 +90,7 @@ int n_opo[MAX_OPO];		/* numero d'entrades de la taula de pos de cada oponent */
 
 /* semafors */
 int id_sem_pant;		/* ID del semafor d'accés a pantalla */
+int id_sem_fit; 		/* ID del semafor d'accés al fitxer */
 
 
 int fi1, fi2;		/* variables finalització de tron */
@@ -106,8 +107,9 @@ void esborrar_posicions(pos p_pos[], int n_pos)
     /* vvv secció crítica d'escriptura de pantalla vvv*/
     waitS(id_sem_pant);
     win_escricar(p_pos[i].f,p_pos[i].c,' ',NO_INV);	/* esborra una pos. */
-    win_retard(10);		/* un petit retard per simular el joc real */
     signalS(id_sem_pant);
+    /* ^^^ secció crítica d'escriptura de pantalla ^^^*/
+    win_retard(10);		/* un petit retard per simular el joc real */
   }
 }
 
@@ -132,7 +134,7 @@ void inicialitza_joc(void)
  		opo[i].f = fila_div + fila_div*i;
  		opo[i].c = (n_col*3)/4;		/* fixa posicio i direccio inicial oponent */
  		opo[i].d = 1;
- 		win_escricar(opo[i].f,opo[i].c,'1',INVERS);	/* escriu la primer posicio oponent */
+ 		win_escricar(opo[i].f,opo[i].c,i+1+'0',INVERS);	/* escriu la primer posicio oponent */
  		p_opo[i][n_opo[i]].f = opo[i].f;		/* memoritza posicio inicial */
  		p_opo[i][n_opo[i]].c = opo[i].c;
 		n_opo[i] ++;
@@ -249,6 +251,7 @@ void mou_usuari(void)
 	  waitS(id_sem_pant);
  	  win_escricar(usu.f,usu.c,'0',INVERS);	/* dibuixa bloc usuari */
 	  signalS(id_sem_pant);
+	  /* ^^^ secció crítica d'escriptura de pantalla ^^^*/
  	  p_usu[n_usu].f = usu.f;		/* memoritza posicio actual */
  	  p_usu[n_usu].c = usu.c;
  	  n_usu++;
@@ -367,20 +370,27 @@ int main(int n_args, const char *ll_args[])
   }
 	
   id_sem_pant = ini_sem(1);		/*inicialitzem el semafor de la pantalla */
- 
+  id_sem_fit = ini_sem(1);
+	
+  pid_t pid[MAX_OPO];			/* pid de cada process oponent */
+
   for(int i = 0; i < num_opo; i++)	/*Per cada tron oponent*/
   {	 
-  	pid_t pid = fork(); 		/*Es crea un process nou*/
+  	pid[i] = fork(); 		/*Es crea un process nou*/
 
- 	if(pid == 0)			/*Si es el process fill (el oponent)*/
+ 	if(pid[i] == 0)			/*Si es el process fill (el oponent)*/
  	{
  	      mou_oponent(i);		
 	      if(log_file)
 	      {
 	     	/* el process escriu informació al fitxer abans de finalitzar */
+		/* vvv secció crítica accés al fitxer vvv */
+		waitS(id_sem_fit);
 	     	fprintf(fd, "Fill id: %d, index: %d\n", getpid(), i+1);	
 	     	fprintf(fd, "Longitud: %d\n", n_opo[i]);
 	     	fprintf(fd, "Causa de mort: TODO\n\n");
+		signalS(id_sem_fit);
+		/* ^^^ secció crítica accés al fitxer ^^^ */
 	      }
 	      exit(1);			/*Quan l'oponent mor s'acaba el process fill oponent*/
  	}
@@ -388,9 +398,10 @@ int main(int n_args, const char *ll_args[])
   
   
   mou_usuari();				/*Per l'usuari s'executa un bucle de moviment*/
-  for(int i = num_opo; i > 0; i--)	/*Quan mor l'usuari es comprova si han mort tots els enemics*/
+  for(int i = 0; i < num_opo; i++)	/*Quan mor l'usuari es comprova si han mort tots els enemics*/
   {	
-  	wait(NULL);
+	int retorn;
+  	waitpid(pid[i], &retorn, 0);
   }
   
   win_fi();				/* tanca les curses */
