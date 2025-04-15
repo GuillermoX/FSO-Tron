@@ -18,8 +18,11 @@ tron0 : tron0.c winsuport.o winsuport.h
 tron1 : tron1.c winsuport.o winsuport.h
 	gcc -Wall tron1.c winsuport.o -o tron1 -lcurses
 
-tron2 : tron2.c winsuport2.o winsuport2.h memoria.o memoria.h
+tron2 : tron2.c winsuport2.o winsuport2.h memoria.o memoria.h semafor.o semafor.h
 	gcc -Wall tron2.c winsuport2.o semafor.o memoria.o -o tron2 -lcurses
+
+tron3/tron3 : tron3/tron3.c winsuport2.o winsuport2.h memoria.o memoria.h semafor.o semafor.h
+	gcc -Wall tron3/tron3.c winsuport2.o semafor.o memoria.o -o tron3/tron3 -lcurses
 
 clean: 
 	rm winsuport.o tron0 tron1

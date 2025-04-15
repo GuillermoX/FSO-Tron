@@ -97,28 +97,26 @@ int n_opo[MAX_OPO];		/* numero d'entrades de la taula de pos de cada oponent */
 /* semafors */
 int id_sem_pant;		/* ID del semafor d'accés a pantalla */
 int id_sem_fit; 		/* ID del semafor d'accés al fitxer */
-int id_sem_var;
+int id_sem_var;			/* ID del semafor d'accés a les variables de finalitzacio */
 
 /* memoria compartida */
-int id_map_mem;
-void *p_map;
-int id_final_mem;
+int id_map_mem;			/* ID de la zona de memoria compartida del mapa */
+void *p_map;			/* punter al mapa */
+int id_final_mem;		/* variables de finalització */
 
-int fi1, fi2;		/* variables finalització de tron */
 
 /* funcio per esborrar totes les posicions anteriors, sigui de l'usuari o */
 /* de l'oponent */
 void esborrar_posicions(pos p_pos[], int n_pos, int usuari)
 {
   int i;
-  
   for (i=n_pos-1; i>=0; i--)		/* de l'ultima cap a la primera */
   {	
     
     /* vvv secció crítica d'escriptura de pantalla vvv*/
     waitS(id_sem_pant);
     win_escricar(p_pos[i].f,p_pos[i].c,' ',NO_INV);	/* esborra una pos. */
-    if(usuari) win_update();
+    if(usuari) win_update();	/* Si es l'usuari qui l'executa actualitza pantalla */
     signalS(id_sem_pant);
     /* ^^^ secció crítica d'escriptura de pantalla ^^^*/
     win_retard(10);		/* un petit retard per simular el joc real */
@@ -183,6 +181,7 @@ void mou_oponent(int index)
  	
  	if (canvi)		/* si s'ha de canviar de direccio */
  	{
+	  canvi = 0;
  	  nd = 0;
  	  for (k=-1; k<=1; k++)	/* provar direccio actual i dir. veines */
  	  {
@@ -245,47 +244,53 @@ void mou_usuari(void)
   char cars;
   tron seg;
   int tecla, retorn;
+  int compt = 0;		/* comptador per executar el bucle de moviment cada temps retard */
+  int modRetard = retard/10;	/* valor per realitzar el modul a compt i reiniciarlo */
   do
   {
- 	
- 	retorn = 0;
- 	tecla = win_gettec();
- 	if (tecla != 0)
- 	 switch (tecla)	/* modificar direccio usuari segons tecla */
- 	 {
- 	  case TEC_AMUNT:	usu.d = 0; break;
- 	  case TEC_ESQUER:	usu.d = 1; break;
- 	  case TEC_AVALL:	usu.d = 2; break;
- 	  case TEC_DRETA:	usu.d = 3; break;
- 	  case TEC_RETURN:	fi->fi1 = 1; break;
- 	 }
- 	seg.f = usu.f + df[usu.d];	/* calcular seguent posicio */
- 	seg.c = usu.c + dc[usu.d];
- 	cars = win_quincar(seg.f,seg.c);	/* calcular caracter seguent posicio */
- 	if (cars == ' ')			/* si seguent posicio lliure */
- 	{
- 	  usu.f = seg.f; usu.c = seg.c;		/* actualitza posicio */
-
-	  /* vvv secció crítica d'escriptura de pantalla vvv*/
-	  waitS(id_sem_pant);
- 	  win_escricar(usu.f,usu.c,'0',INVERS);	/* dibuixa bloc usuari */
-	  signalS(id_sem_pant);
-	  /* ^^^ secció crítica d'escriptura de pantalla ^^^*/
- 	  p_usu[n_usu].f = usu.f;		/* memoritza posicio actual */
- 	  p_usu[n_usu].c = usu.c;
- 	  n_usu++;
- 	}
- 	else
- 	{ 
-	  /* vvv Secció crítica variables globals vvv */
-	  waitS(id_sem_var);
-	  fi->fi1 = 1;
-	  signalS(id_sem_var);
-	  /* ^^^ ------------------------------- ^^^*/
- 	}
-
-	win_update();
-	win_retard(retard);
+	if(compt == 0)
+	{	
+		retorn = 0;
+		tecla = win_gettec();
+		if (tecla != 0)
+		 switch (tecla)	/* modificar direccio usuari segons tecla */
+		 {
+		  case TEC_AMUNT:	usu.d = 0; break;
+		  case TEC_ESQUER:	usu.d = 1; break;
+		  case TEC_AVALL:	usu.d = 2; break;
+		  case TEC_DRETA:	usu.d = 3; break;
+		  case TEC_RETURN:	fi->fi1 = -1; break;
+		 }
+		seg.f = usu.f + df[usu.d];	/* calcular seguent posicio */
+		seg.c = usu.c + dc[usu.d];
+		cars = win_quincar(seg.f,seg.c);	/* calcular caracter seguent posicio */
+		if (cars == ' ')			/* si seguent posicio lliure */
+		{
+		  usu.f = seg.f; usu.c = seg.c;		/* actualitza posicio */
+		
+		  /* vvv secció crítica d'escriptura de pantalla vvv*/
+		  waitS(id_sem_pant);
+		  win_escricar(usu.f,usu.c,'0',INVERS);	/* dibuixa bloc usuari */
+		  signalS(id_sem_pant);
+		  /* ^^^ --------------------------------------- ^^^*/
+		  p_usu[n_usu].f = usu.f;		/* memoritza posicio actual */
+		  p_usu[n_usu].c = usu.c;
+		  n_usu++;
+		}
+		else
+		{ 
+		  /* vvv Secció crítica variables globals vvv */
+		  waitS(id_sem_var);
+		  fi->fi1 = 1;
+		  signalS(id_sem_var);
+		  /* ^^^ ------------------------------- ^^^*/
+		}
+		
+	}
+	compt = (compt + 1) % modRetard;
+	
+	win_update();		/* s'actualiza la pantalla */
+	win_retard(10);		/* s'actualitza cada 10 milisegons, independentment del retard de moviment del jugador */
   } while((fi->fi1 == 0) && (fi->fi2 != 0) && !retorn);
 
   esborrar_posicions(p_usu, n_usu, 1);
@@ -441,19 +446,22 @@ int main(int n_args, const char *ll_args[])
 	int retorn;
   	waitpid(pid[i], &retorn, 0);
   }
+
+  win_fi();
   
-  win_fi();				/* tanca les curses */
-  free(p_usu);
-  for(int i = 0; i < num_opo; i++)
-  {
-  	free(p_opo[i]);	  	 /* allibera la memoria dinamica obtinguda */
-  }
   
-  if (fi1 == -1) printf("S'ha aturat el joc amb tecla RETURN!\n\n");
+
+  if (fi->fi1 == -1) printf("S'ha aturat el joc amb tecla RETURN!\n\n");
   else { if (fi->fi1 == 0) printf("Ha guanyat l'usuari!\n\n");
   	else printf("Ha guanyat l'ordinador!\n\n"); }	
  
 
+  free(p_usu);
+
+  for(int i = 0; i < num_opo; i++)
+  {
+	free(p_opo[i]);	
+  }
 
   return(0);
 }
