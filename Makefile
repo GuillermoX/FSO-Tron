@@ -21,7 +21,11 @@ tron1 : tron1.c winsuport.o winsuport.h
 tron2 : tron2.c winsuport2.o winsuport2.h memoria.o memoria.h semafor.o semafor.h
 	gcc -Wall tron2.c winsuport2.o semafor.o memoria.o -o tron2 -lcurses
 
-tron3/tron3 : tron3/tron3.c winsuport2.o winsuport2.h memoria.o memoria.h semafor.o semafor.h
+
+tron3/oponent3 : tron3/oponent3.c winsuport2.o winsuport2.h memoria.o memoria.h semafor.o semafor.h
+	gcc -Wall tron3/oponent3.c winsuport2.o semafor.o memoria.o -o tron3/oponent3 -lcurses
+
+tron3/tron3 : tron3/oponent3 tron3/tron3.c winsuport2.o winsuport2.h memoria.o memoria.h semafor.o semafor.h
 	gcc -Wall tron3/tron3.c winsuport2.o semafor.o memoria.o -o tron3/tron3 -lcurses
 
 clean: 

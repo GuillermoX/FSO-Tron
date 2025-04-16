@@ -52,6 +52,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 #include "../winsuport2.h"		/* incloure definicions de funcions propies */
 #include "../semafor.h"		/* incloure les funcions dels semafors */
 #include "../memoria.h"
@@ -85,9 +86,14 @@ typedef struct {		/* variables de finalització compartides */
 	int id_sem_var;			/* ID del semafor d'accés a les variables de finalitzacio */
 
 	int id_map_mem;			/* ID de la zona de memoria compartida del mapa */
+
+	/* file descriptor */
+	int fd;
 } shared_t;
 
 /* variables globals */
+
+int n_fil, n_col;		/* dimensions del camp de joc */
 
 tron usu;   	   		/* informacio de l'usuari */
 tron opo[MAX_OPO];		/* informacio dels oponents */
@@ -293,7 +299,6 @@ int main(int n_args, const char *ll_args[])
   getchar();
 	
 
-  int n_fil, n_col;		/* dimensions del camp de joc */
   n_fil = 0; n_col = 0;		/* demanarem dimensions de taulell maximes */
   retwin = win_ini(&n_fil,&n_col,'+',INVERS);	/* intenta crear taulell */
   /* guardar num files y columnes a memoria compartida */
@@ -313,7 +318,6 @@ int main(int n_args, const char *ll_args[])
 
   /* si s'ha creat el taulell reservem memoria compartida pel mapa i guardem l'ID a la memoria compartida */
   p_shared->id_map_mem = ini_mem(retwin);
-
   p_map = map_mem(p_shared->id_map_mem);
   win_set(p_map, n_fil, n_col);
   
@@ -335,21 +339,22 @@ int main(int n_args, const char *ll_args[])
   inicialitza_joc();
 
 	
-  FILE *fd;  
+  int fd;  
   if(log_file)
   {
 
- 	fd = fopen(ll_args[3], "w");	/* obrir un canal amb l'arxiu on escriuran els fills */
- 	if(fd == NULL)
+ 	fd = open(ll_args[3], O_WRONLY | O_CREAT | O_TRUNC, 0644);	/* obrir un canal amb l'arxiu on escriuran els fills */
+ 	if(fd == -1)
  	{
  	        perror("Unable to open file");
  	        log_file = 0;
  	}
 	else
 	{	
- 		setbuf(fd, NULL);	/* deshabilitem el buffer de l'escriptura a l'arxiu */
+ 		//setbuf(fd, NULL);	/* deshabilitem el buffer de l'escriptura a l'arxiu 
 	}
   }
+  p_shared->fd = fd;
 	
   p_shared->id_sem_pant = ini_sem(1);		/*inicialitzem el semafor de la pantalla */
   p_shared->id_sem_fit = ini_sem(1);
@@ -359,13 +364,18 @@ int main(int n_args, const char *ll_args[])
 
   for(int i = 0; i < num_opo; i++)	/*Per cada tron oponent*/
   {	
-	//printf("idMem: %d, index: %d, fila: %d, col: %d \n", id_shared_mem, num_opo, p_opo[i][0].c, p_opo[i][0].f);	
-	/*TODO: create childs with execlp();
+	//TODO: create childs with execlp();
   	pid[i] = fork(); 		//Es crea un process nou
 
  	if(pid[i] == 0)			//Si es el process fill (el oponent)
  	{
- 	      mou_oponent(i);		
+              char id_shared_mem_s[10], i_s[3], fila_s[4], col_s[4];
+	      sprintf(id_shared_mem_s, "%d", id_shared_mem);
+	      sprintf(i_s, "%d", i);
+	      sprintf(fila_s, "%d", p_opo[i][0].f);
+	      sprintf(col_s, "%d", p_opo[i][0].c);
+	      execlp("./oponent3", "oponent3", id_shared_mem_s, i_s, fila_s, col_s, (char *)0);
+	      /*
 	      if(log_file)
 	      {
 	     	// el process escriu informació al fitxer abans de finalitzar
@@ -379,17 +389,18 @@ int main(int n_args, const char *ll_args[])
 		signalS(id_sem_fit);
 		// ^^^ secció crítica accés al fitxer ^^^
 	      }
+	      */
 	      exit(1);			//Quan l'oponent mor s'acaba el process fill oponent
+	      
  	}
-	*/
-  } 
+  }
   
   
   mou_usuari();				/*Per l'usuari s'executa un bucle de moviment*/
   for(int i = 0; i < num_opo; i++)	/*Quan mor l'usuari es comprova si han mort tots els enemics*/
   {	
 	int retorn;
-  	//waitpid(pid[i], &retorn, 0);
+  	waitpid(pid[i], &retorn, 0);
   }
 
   win_fi();
@@ -410,3 +421,4 @@ int main(int n_args, const char *ll_args[])
 
   return(0);
 }
+
