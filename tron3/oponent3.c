@@ -176,13 +176,16 @@ do
     FILE *fd = fdopen(p_shared->fd, "w");
     // el process escriu informació al fitxer abans de finalitzar
     // vvv secció crítica accés al fitxer vvv 
-    waitS(id_sem_fit);
-    fprintf(fd, "Fill id: %d, index: %d\n", getpid(), index+1);	
-    fprintf(fd, "Longitud: %d\n", n_opo);
-    fprintf(fd, "Causa de finalització: ");	
-    if(p_shared->fi1 == 0) fprintf(fd, "Mort propia\n\n");
-    else fprintf(fd, "Mort jugador humà\n\n");
-    signalS(id_sem_fit);
+    if(p_shared->fd != 0)
+    {
+   	waitS(id_sem_fit);
+   	fprintf(fd, "Fill id: %d, index: %d\n", getpid(), index+1);	
+   	fprintf(fd, "Longitud: %d\n", n_opo);
+   	fprintf(fd, "Causa de finalització: ");	
+   	if(p_shared->fi1 == 0) fprintf(fd, "Mort propia\n\n");
+   	else fprintf(fd, "Mort jugador humà\n\n");
+   	signalS(id_sem_fit);
+    }
     // ^^^ secció crítica accés al fitxer ^^^
   }
 	

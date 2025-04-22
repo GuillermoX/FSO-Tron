@@ -375,21 +375,6 @@ int main(int n_args, const char *ll_args[])
 	      sprintf(fila_s, "%d", p_opo[i][0].f);
 	      sprintf(col_s, "%d", p_opo[i][0].c);
 	      execlp("./oponent3", "oponent3", id_shared_mem_s, i_s, fila_s, col_s, (char *)0);
-	      /*
-	      if(log_file)
-	      {
-	     	// el process escriu informació al fitxer abans de finalitzar
-		// vvv secció crítica accés al fitxer vvv 
-		waitS(id_sem_fit);
-	     	fprintf(fd, "Fill id: %d, index: %d\n", getpid(), i+1);	
-	     	fprintf(fd, "Longitud: %d\n", n_opo[i]);
-	     	fprintf(fd, "Causa de finalització:\n");	
-		if(fi->fi1 == 0) fprintf(fd, "Mort propia\n\n");
-		else fprintf(fd, "Mort jugador humà\n\n");
-		signalS(id_sem_fit);
-		// ^^^ secció crítica accés al fitxer ^^^
-	      }
-	      */
 	      exit(1);			//Quan l'oponent mor s'acaba el process fill oponent
 	      
  	}
