@@ -48,11 +48,14 @@
 /*									     */
 /*****************************************************************************/
 
+#define _REENTRANT
+
 #include <stdio.h>		/* incloure definicions de funcions estandard */
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include "../winsuport2.h"		/* incloure definicions de funcions propies */
 #include "../semafor.h"		/* incloure les funcions dels semafors */
 #include "../memoria.h"
@@ -126,7 +129,7 @@ void esborrar_posicions(pos p_pos[], int n_pos, int usuari)
     /* vvv secció crítica d'escriptura de pantalla vvv*/
     waitS(p_shared->id_sem_pant);
     win_escricar(p_pos[i].f,p_pos[i].c,' ',NO_INV);	/* esborra una pos. */
-    if(usuari) win_update();	/* Si es l'usuari qui l'executa actualitza pantalla */
+    win_update();	/* Si es l'usuari qui l'executa actualitza pantalla*/
     signalS(p_shared->id_sem_pant);
     /* ^^^ secció crítica d'escriptura de pantalla ^^^*/
     win_retard(10);		/* un petit retard per simular el joc real */
@@ -173,61 +176,57 @@ void inicialitza_joc(void)
 /* funcio per moure l'usuari una posicio, en funcio de la direccio de   */
 /* moviment actual; retorna -1 si s'ha premut RETURN, 1 si ha xocat     */
 /* contra alguna cosa, i 0 altrament */
-void mou_usuari(void)
+void * mou_usuari(void * i)
 {
   char cars;
   tron seg;
   int tecla, retorn;
-  int compt = 0;		/* comptador per executar el bucle de moviment cada temps retard */
-  int modRetard = retard/10;	/* valor per realitzar el modul a compt i reiniciarlo */
   do
   {
-	if(compt == 0)
-	{	
-		retorn = 0;
-		tecla = win_gettec();
-		if (tecla != 0)
-		 switch (tecla)	/* modificar direccio usuari segons tecla */
-		 {
-		  case TEC_AMUNT:	usu.d = 0; break;
-		  case TEC_ESQUER:	usu.d = 1; break;
-		  case TEC_AVALL:	usu.d = 2; break;
-		  case TEC_DRETA:	usu.d = 3; break;
-		  case TEC_RETURN:	p_shared->fi1 = -1; break;
-		 }
-		seg.f = usu.f + df[usu.d];	/* calcular seguent posicio */
-		seg.c = usu.c + dc[usu.d];
-		cars = win_quincar(seg.f,seg.c);	/* calcular caracter seguent posicio */
-		if (cars == ' ')			/* si seguent posicio lliure */
-		{
-		  usu.f = seg.f; usu.c = seg.c;		/* actualitza posicio */
-		
-		  /* vvv secció crítica d'escriptura de pantalla vvv*/
-		  waitS(p_shared->id_sem_pant);
-		  win_escricar(usu.f,usu.c,'0',INVERS);	/* dibuixa bloc usuari */
-		  signalS(p_shared->id_sem_pant);
-		  /* ^^^ --------------------------------------- ^^^*/
-		  p_usu[n_usu].f = usu.f;		/* memoritza posicio actual */
-		  p_usu[n_usu].c = usu.c;
-		  n_usu++;
-		}
-		else
-		{ 
-		  /* vvv Secció crítica variables globals vvv */
-		  waitS(p_shared->id_sem_var);
-		  p_shared->fi1 = 1;
-		  signalS(p_shared->id_sem_var);
-		  /* ^^^ ------------------------------- ^^^*/
-		}
-		
+  	retorn = 0;
+  	tecla = win_gettec();
+  	if (tecla != 0)
+  	 switch (tecla)	/* modificar direccio usuari segons tecla */
+  	 {
+  	  case TEC_AMUNT:	usu.d = 0; break;
+  	  case TEC_ESQUER:	usu.d = 1; break;
+  	  case TEC_AVALL:	usu.d = 2; break;
+  	  case TEC_DRETA:	usu.d = 3; break;
+  	  case TEC_RETURN:	p_shared->fi1 = -1; break;
+  	 }
+  	seg.f = usu.f + df[usu.d];	/* calcular seguent posicio */
+  	seg.c = usu.c + dc[usu.d];
+  	cars = win_quincar(seg.f,seg.c);	/* calcular caracter seguent posicio */
+  	if (cars == ' ')			/* si seguent posicio lliure */
+  	{
+  	  usu.f = seg.f; usu.c = seg.c;		/* actualitza posicio */
+  	
+  	  /* vvv secció crítica d'escriptura de pantalla vvv*/
+  	  waitS(p_shared->id_sem_pant);
+  	  win_escricar(usu.f,usu.c,'0',INVERS);	/* dibuixa bloc usuari */
+  	  signalS(p_shared->id_sem_pant);
+  	  /* ^^^ --------------------------------------- ^^^*/
+  	  p_usu[n_usu].f = usu.f;		/* memoritza posicio actual */
+  	  p_usu[n_usu].c = usu.c;
+  	  n_usu++;
+  	}
+  	else
+  	{ 
+  	  /* vvv Secció crítica variables globals vvv */
+  	  waitS(p_shared->id_sem_var);
+  	  p_shared->fi1 = 1;
+  	  signalS(p_shared->id_sem_var);
+  	  /* ^^^ ------------------------------- ^^^*/
 	}
-	compt = (compt + 1) % modRetard;
+		
 	
-	win_update();		/* s'actualiza la pantalla */
-	win_retard(10);		/* s'actualitza cada 10 milisegons, independentment del retard de moviment del jugador */
+	win_retard(retard);
+
   } while((p_shared->fi1 == 0) && (p_shared->fi2 != 0) && !retorn);
 
   esborrar_posicions(p_usu, n_usu, 1);
+
+  return ((void *)(intptr_t)0);
 
 }
 
@@ -364,7 +363,6 @@ int main(int n_args, const char *ll_args[])
 
   for(int i = 0; i < num_opo; i++)	/*Per cada tron oponent*/
   {	
-	//TODO: create childs with execlp();
   	pid[i] = fork(); 		//Es crea un process nou
 
  	if(pid[i] == 0)			//Si es el process fill (el oponent)
@@ -374,14 +372,44 @@ int main(int n_args, const char *ll_args[])
 	      sprintf(i_s, "%d", i);
 	      sprintf(fila_s, "%d", p_opo[i][0].f);
 	      sprintf(col_s, "%d", p_opo[i][0].c);
-	      execlp("./oponent3", "oponent3", id_shared_mem_s, i_s, fila_s, col_s, (char *)0);
+	      execlp("./oponent4", "oponent4", id_shared_mem_s, i_s, fila_s, col_s, (char *)0);
 	      exit(1);			//Quan l'oponent mor s'acaba el process fill oponent
 	      
  	}
   }
-  
-  
-  mou_usuari();				/*Per l'usuari s'executa un bucle de moviment*/
+ 
+  pthread_t tid;  
+  int t;
+  win_update();
+  pthread_create(&tid, NULL, mou_usuari, NULL); 
+	
+  int mins, secs, steps;
+  mins = secs = steps = 0;
+  char temps[40];
+  while(p_shared->fi1 == 0 && p_shared->fi2 != 0)
+  {
+	win_update();
+	win_retard(10);
+	steps ++;
+	if(steps == 100)
+	{
+		secs ++;
+		steps = 0;
+	}
+	if(secs == 60)
+	{
+		mins ++;
+		secs = 0;
+	}
+	sprintf(temps, "Temps de joc: %d\' %d\'\'", mins, secs);
+	win_escristr(temps);
+
+  }
+
+
+
+  //mou_usuari();				Per l'usuari s'executa un bucle de moviment
+  pthread_join(tid, (void **)&t);	//El programa principal espera el fi d'execució del fil de l'usuari
   for(int i = 0; i < num_opo; i++)	/*Quan mor l'usuari es comprova si han mort tots els enemics*/
   {	
 	int retorn;
@@ -392,10 +420,10 @@ int main(int n_args, const char *ll_args[])
   
   
 
-
   if (p_shared->fi1 == -1) printf("S'ha aturat el joc amb tecla RETURN!\n\n");
   else { if (p_shared->fi1 == 0) printf("Ha guanyat l'usuari!\n\n");
   	else printf("Ha guanyat l'ordinador!\n\n"); }	
+  printf("%s\n", temps);
  
 
   free(p_usu);
@@ -404,6 +432,12 @@ int main(int n_args, const char *ll_args[])
   {
 	free(p_opo[i]);	
   }
+
+  elim_sem(p_shared->id_sem_pant);
+  elim_sem(p_shared->id_sem_var);
+  elim_sem(p_shared->id_sem_fit);
+  elim_mem(p_shared->id_map_mem);
+  elim_mem(id_shared_mem);
 
   return(0);
 }
