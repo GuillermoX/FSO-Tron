@@ -59,6 +59,7 @@
 #include "../winsuport2.h"		/* incloure definicions de funcions propies */
 #include "../semafor.h"		/* incloure les funcions dels semafors */
 #include "../memoria.h"
+#include "../missatge.h"
 
 #define MAX_OPO 9		/* màxim nombre d'oponents */
 
@@ -87,6 +88,9 @@ typedef struct {		/* variables de finalització compartides */
 	int id_sem_pant;		/* ID del semafor d'accés a pantalla */
 	int id_sem_fit; 		/* ID del semafor d'accés al fitxer */
 	int id_sem_var;			/* ID del semafor d'accés a les variables de finalitzacio */
+
+	/* bústies */
+	int id_bust[MAX_OPO];
 
 	int id_map_mem;			/* ID de la zona de memoria compartida del mapa */
 
@@ -139,7 +143,6 @@ void esborrar_posicions(pos p_pos[], int n_pos, int usuari)
 /* funcio per inicialitar les variables i visualitzar l'estat inicial del joc */
 void inicialitza_joc(void)
 {
-  char strin[45];
 
   /* inicialitzar variables de finalització */
   p_shared->fi1 = 0;
@@ -167,9 +170,6 @@ void inicialitza_joc(void)
 		n_opo[i] ++;
   }
 
-  sprintf(strin,"Tecles: \'%c\', \'%c\', \'%c\', \'%c\', RETURN-> sortir\n",
-		TEC_AMUNT, TEC_AVALL, TEC_DRETA, TEC_ESQUER);
-  win_escristr(strin);
 }
 
 
@@ -197,7 +197,15 @@ void * mou_usuari(void * i)
   	seg.f = usu.f + df[usu.d];	/* calcular seguent posicio */
   	seg.c = usu.c + dc[usu.d];
   	cars = win_quincar(seg.f,seg.c);	/* calcular caracter seguent posicio */
-  	if (cars == ' ')			/* si seguent posicio lliure */
+  	if (cars == '+' || cars == '0')			/* choc contra paret */
+  	{ 
+  	  /* vvv Secció crítica variables globals vvv */
+  	  waitS(p_shared->id_sem_var);
+  	  p_shared->fi1 = 1;
+  	  signalS(p_shared->id_sem_var);
+  	  /* ^^^ ------------------------------- ^^^*/
+	}
+	else			/* si seguent posicio lliure o oponent*/
   	{
   	  usu.f = seg.f; usu.c = seg.c;		/* actualitza posicio */
   	
@@ -209,15 +217,16 @@ void * mou_usuari(void * i)
   	  p_usu[n_usu].f = usu.f;		/* memoritza posicio actual */
   	  p_usu[n_usu].c = usu.c;
   	  n_usu++;
+
+	  if(cars != ' ')	/* si hi havia un oponent */
+	  {
+		for(int i = 0; i < num_opo; i++)
+		{	
+			// es comunica a tots els oponents el lloc del choc
+			sendM(p_shared->id_bust[i], (void*)&usu, sizeof(pos));
+		}
+	  }
   	}
-  	else
-  	{ 
-  	  /* vvv Secció crítica variables globals vvv */
-  	  waitS(p_shared->id_sem_var);
-  	  p_shared->fi1 = 1;
-  	  signalS(p_shared->id_sem_var);
-  	  /* ^^^ ------------------------------- ^^^*/
-	}
 		
 	
 	win_retard(retard);
@@ -358,6 +367,12 @@ int main(int n_args, const char *ll_args[])
   p_shared->id_sem_pant = ini_sem(1);		/*inicialitzem el semafor de la pantalla */
   p_shared->id_sem_fit = ini_sem(1);
   p_shared->id_sem_var = ini_sem(1);
+
+
+  for(int i = 0; i < num_opo; i++)
+  {
+	p_shared->id_bust[i] = ini_mis();  // s'inicialitzen les bústies
+  }
 	
   pid_t pid[MAX_OPO];			/* pid de cada process oponent */
 
@@ -386,6 +401,7 @@ int main(int n_args, const char *ll_args[])
   int mins, secs, steps;
   mins = secs = steps = 0;
   char temps[40];
+  char strin[90];
   while(p_shared->fi1 == 0 && p_shared->fi2 != 0)
   {
 	win_update();
@@ -401,8 +417,11 @@ int main(int n_args, const char *ll_args[])
 		mins ++;
 		secs = 0;
 	}
+
 	sprintf(temps, "Temps de joc: %d\' %d\'\'", mins, secs);
-	win_escristr(temps);
+ 	sprintf(strin,"Tecles: \'%c\', \'%c\', \'%c\', \'%c\', RETURN-> sortir\t\t\t\t\t\t%s",
+ 	      	TEC_AMUNT, TEC_AVALL, TEC_DRETA, TEC_ESQUER, temps);
+ 	win_escristr(strin);
 
   }
 
@@ -431,6 +450,7 @@ int main(int n_args, const char *ll_args[])
   for(int i = 0; i < num_opo; i++)
   {
 	free(p_opo[i]);	
+	elim_mis(p_shared->id_bust[i]);
   }
 
   elim_sem(p_shared->id_sem_pant);
