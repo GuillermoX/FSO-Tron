@@ -3,9 +3,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <pthread.h>
 #include "../winsuport2.h"		/* incloure definicions de funcions propies */
 #include "../semafor.h"		/* incloure les funcions dels semafors */
 #include "../memoria.h"
+#include "../missatge.h"
+
+#define MAX_OPO 9		/* màxim nombre d'oponents */
 
 typedef struct {		/* per un tron (usuari o oponent) */
 	int f;				/* posicio actual: fila */
@@ -32,13 +36,115 @@ typedef struct {		/* variables de finalització compartides */
 	int id_sem_fit; 		/* ID del semafor d'accés al fitxer */
 	int id_sem_var;			/* ID del semafor d'accés a les variables de finalitzacio */
 
+	/* bústies */
+	int id_bust[MAX_OPO];
+
 	int id_map_mem;			/* ID de la zona de memoria compartida del mapa */
 
 	int fd;
 } shared_t;
 
+typedef struct
+{
+	int dir;
+	int i;
+}action_param_t;
+
+
+
 int id_sem_pant;
 void *p_map;
+
+shared_t *p_shared;
+int id_bust;
+
+pos *p_opo;
+int n_opo;
+
+int i_opo;
+
+
+void * event_action(void * par)
+{
+	action_param_t *param = (action_param_t*)par;
+	int i = param->i;
+	if(param->dir == 0)
+	{
+		if(i != n_opo)	//si no es la primera posició (cap)
+		{
+			for(int j = i+1; j < n_opo; j++)
+			{		
+				waitS(id_sem_pant);
+				win_escricar(p_opo[j].f, p_opo[j].c, i_opo+'A', INVERS);
+				signalS(id_sem_pant);
+				win_retard(10);
+			}
+		}
+	}
+	else
+	{
+		if(i != 0)	//si no es la última posició (cua)
+		{
+			for(int j = i-1; j >= 0; j--)
+			{		
+				waitS(id_sem_pant);
+				win_escricar(p_opo[j].f, p_opo[j].c, i_opo+'a', INVERS);
+				signalS(id_sem_pant);
+				win_retard(10);
+			}
+		}
+	}	
+	
+	
+	free(param);
+
+	return((void*)(intptr_t)0);
+
+}
+
+void * event_listener(void * i)
+{
+	pos position;
+	do
+	{
+		receiveM(id_bust, (void*) &position);
+		
+		int trobat = 0;
+		int i = 0;
+		while(i < n_opo && trobat == 0)
+		{
+			trobat = (p_opo[i].c == position.c) && (p_opo[i].f == position.f);
+			i++;
+		}
+		i--;
+
+		if(trobat)
+		{
+			pthread_t tid1;
+			action_param_t *param1 = malloc(sizeof(action_param_t));
+			param1->dir = 0;		//direcció cap
+			param1->i = i;
+
+			pthread_t tid2;
+			action_param_t *param2  = malloc(sizeof(action_param_t));
+			param2->dir = 1;		//direcció cua
+			param2->i = i;
+
+
+			pthread_create(&tid1, NULL, event_action, (void*)param1);
+			pthread_create(&tid2, NULL, event_action, (void*)param2);
+			
+			pthread_join(tid1, NULL);
+			pthread_join(tid2, NULL);
+
+
+		}
+	}while(1);
+
+	return ((void*)(intptr_t)0);
+
+}
+
 
 /* funcio per esborrar totes les posicions anteriors, sigui de l'usuari o */
 /* de l'oponent */
@@ -65,24 +171,24 @@ int main(int argc, char **argv)
 {
   /* obtenir punter a memoria compartida */
   int id_shared_mem = atoi(argv[1]);
-  shared_t *p_shared = map_mem(id_shared_mem);
+  p_shared = map_mem(id_shared_mem);
 	
   /* inicialitzar accés a mapa */
   p_map = map_mem(p_shared->id_map_mem);
   win_set(p_map, p_shared->n_fil, p_shared->n_col);
   
-  /* obtenir index */
-  int index = atoi(argv[2]);
+  /* obtenir i_opo */
+  i_opo = atoi(argv[2]);
 	
   /* inicialitzar la posició del oponent */
   tron opo;
-  pos *p_opo = calloc((p_shared->n_fil*p_shared->n_col)/2, sizeof(pos));
+  p_opo = calloc((p_shared->n_fil*p_shared->n_col)/2, sizeof(pos));
   p_opo[0].f = atoi(argv[3]);
   p_opo[0].c = atoi(argv[4]);
   opo.c = p_opo[0].c;
   opo.f = p_opo[0].f;
   opo.d = 1;
-  int n_opo = 1;
+  n_opo = 1;
 	
   /* obtenir els valors de retard i variabilitat */
   int retard_min = p_shared->retard_min;
@@ -94,6 +200,9 @@ int main(int argc, char **argv)
   int id_sem_fit = p_shared->id_sem_fit;
   int id_sem_var = p_shared->id_sem_var;
 
+  /*obtenir el id de la bústia*/
+  id_bust = p_shared->id_bust[i_opo];
+
   char cars;
   tron seg;
   int k, vk, nd, vd[3];
@@ -103,9 +212,12 @@ int main(int argc, char **argv)
 
   int df[] = {-1, 0, 1, 0};	/* moviments de les 4 direccions possibles */
   int dc[] = {0, -1, 0, 1};	/* dalt, esquerra, baix, dreta */
+
+  pthread_t tid;
+  pthread_create(&tid, NULL, event_listener, NULL);
  
 do
-  { 
+  { 	
  	seg.f = opo.f + df[opo.d];	/* calcular seguent posicio */
  	seg.c = opo.c + dc[opo.d];
  	cars = win_quincar(seg.f,seg.c);	/* calcula caracter seguent posicio */
@@ -148,7 +260,7 @@ do
  	  opo.c = opo.c + dc[opo.d];
 	  /* vvv secció crítica d'escriptura de pantalla vvv*/
 	  waitS(id_sem_pant);
- 	  win_escricar(opo.f,opo.c,index+1+'0',INVERS);	/* dibuixa bloc oponent */
+ 	  win_escricar(opo.f,opo.c,i_opo+1+'0',INVERS);	/* dibuixa bloc oponent */
 	  signalS(id_sem_pant);
 	  /* ^^^ secció crítica d'escriptura de pantalla ^^^ */
  	  p_opo[n_opo].f = opo.f;			/* memoritza posicio actual */
@@ -163,6 +275,7 @@ do
 		signalS(id_sem_var);
 		/* ^^^----------------------------------^^^ */
 	}
+
 	
 	int retard_aleat = retard_min + (rand() % (retard_max-retard_min)); 		
 	win_retard(retard_aleat);
@@ -179,7 +292,7 @@ do
     if(p_shared->fd != 0)
     {
    	waitS(id_sem_fit);
-   	fprintf(fd, "Fill id: %d, index: %d\n", getpid(), index+1);	
+   	fprintf(fd, "Fill id: %d, i_opo: %d\n", getpid(), i_opo+1);	
    	fprintf(fd, "Longitud: %d\n", n_opo);
    	fprintf(fd, "Causa de finalització: ");	
    	if(p_shared->fi1 == 0) fprintf(fd, "Mort propia\n\n");
