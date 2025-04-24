@@ -41,8 +41,14 @@ tron4/tron4 : tron4/oponent4 tron4/tron4.c winsuport2.o winsuport2.h memoria.o m
 tron5/oponent5 : tron5/oponent5.c winsuport2.o winsuport2.h memoria.o memoria.h semafor.o semafor.h missatge.o missatge.h
 	gcc -Wall tron5/oponent5.c winsuport2.o semafor.o memoria.o missatge.o -o tron5/oponent5 -lcurses
 
-tron5/tron5 : tron5/oponent5 tron4/tron4.c winsuport2.o winsuport2.h memoria.o memoria.h semafor.o semafor.h missatge.o missatge.h
+tron5/tron5 : tron5/oponent5 tron5/tron5.c winsuport2.o winsuport2.h memoria.o memoria.h semafor.o semafor.h missatge.o missatge.h
 	gcc -Wall tron5/tron5.c winsuport2.o semafor.o memoria.o missatge.o -o tron5/tron5 -lcurses -lpthread
+
+tron6/oponent6 : tron6/oponent6.c winsuport2.o winsuport2.h memoria.o memoria.h semafor.o semafor.h missatge.o missatge.h
+	gcc -Wall tron6/oponent6.c winsuport2.o semafor.o memoria.o missatge.o -o tron6/oponent6 -lcurses
+
+tron6/tron6 : tron6/oponent6 tron6/tron6.c winsuport2.o winsuport2.h memoria.o memoria.h semafor.o semafor.h missatge.o missatge.h
+	gcc -Wall tron6/tron6.c winsuport2.o semafor.o memoria.o missatge.o -o tron6/tron6 -lcurses -lpthread
 
 clean: 
 	rm winsuport.o tron0 tron1
