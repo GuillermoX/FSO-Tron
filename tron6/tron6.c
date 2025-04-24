@@ -96,6 +96,7 @@ typedef struct {		/* variables de finalització compartides */
 
 	/* file descriptor */
 	int fd;
+
 } shared_t;
 
 /* variables globals */
@@ -121,10 +122,12 @@ int n_opo[MAX_OPO];		/* numero d'entrades de la taula de pos de cada oponent */
 void *p_map;			/* punter al mapa */
 shared_t *p_shared;		/* punter a memoria compartida */
 
+int mode;			/* mode super-usuari */
+
 
 /* funcio per esborrar totes les posicions anteriors, sigui de l'usuari o */
 /* de l'oponent */
-void esborrar_posicions(pos p_pos[], int n_pos, int usuari)
+void esborrar_posicions(pos p_pos[], int n_pos)
 {
   int i;
   for (i=n_pos-1; i>=0; i--)		/* de l'ultima cap a la primera */
@@ -153,6 +156,8 @@ void esborrar_posicions(pos p_pos[], int n_pos, int usuari)
 /* funcio per inicialitar les variables i visualitzar l'estat inicial del joc */
 void inicialitza_joc(void)
 {
+
+  mode = 0;	/* mode normal */
 
   /* inicialitzar variables de finalització */
   p_shared->fi1 = 0;
@@ -194,7 +199,12 @@ void * mou_usuari(void * i)
   do
   {
   	retorn = 0;
+	/* vvv SC Pantalla vvv*/
+	waitS(p_shared->id_sem_pant);
   	tecla = win_gettec();
+	signalS(p_shared->id_sem_pant);
+	/*^^^ SC Pantalla ^^^*/
+
   	if (tecla != 0)
   	 switch (tecla)	/* modificar direccio usuari segons tecla */
   	 {
@@ -202,22 +212,22 @@ void * mou_usuari(void * i)
   	  case TEC_ESQUER:	usu.d = 1; break;
   	  case TEC_AVALL:	usu.d = 2; break;
   	  case TEC_DRETA:	usu.d = 3; break;
-  	  case TEC_RETURN:	p_shared->fi1 = -1; break;
+  	  case TEC_RETURN:
+				/*vvv SC variables final vvv */
+				waitS(p_shared->id_sem_var);
+				p_shared->fi1 = -1;
+				signalS(p_shared->id_sem_var);
+				/* ^^^ SC variables final ^^^*/
+				break;
   	 }
   	seg.f = usu.f + df[usu.d];	/* calcular seguent posicio */
   	seg.c = usu.c + dc[usu.d];
+	/* vvv SC Pantalla vvv*/
+	waitS(p_shared->id_sem_pant);	/* Asegurem que el tauler no es modifica desde que obtenim el seu estat fins que el usuari el pinta*/
   	cars = win_quincar(seg.f,seg.c);	/* calcular caracter seguent posicio */
-	carsact = win_quincar(usu.f, usu.c);	/* veure quin és l'ultim caracter colocal */
+	carsact = win_quincar(usu.f, usu.c);	/* veure quin és l'ultim caracter colocat */
 
-  	if (cars == '+' || cars == '0' || (carsact == 'X' && cars != ' '))			/* choc contra paret */
-  	{ 
-  	  /* vvv Secció crítica variables globals vvv */
-  	  waitS(p_shared->id_sem_var);
-  	  p_shared->fi1 = 1;
-  	  signalS(p_shared->id_sem_var);
-  	  /* ^^^ ------------------------------- ^^^*/
-	}
-	else			/* si seguent posicio lliure o oponent*/
+	if (cars == ' ' || (cars != ' ' && mode && carsact != 'X'))			/* si seguent posicio lliure o oponent*/
   	{
 	  char segchar = '0';
   	  usu.f = seg.f; usu.c = seg.c;		/* actualitza posicio */
@@ -233,23 +243,30 @@ void * mou_usuari(void * i)
 
 	  }
   	
-  	  /* vvv secció crítica d'escriptura de pantalla vvv*/
-  	  waitS(p_shared->id_sem_pant);
   	  win_escricar(usu.f,usu.c,segchar,INVERS);	/* dibuixa bloc usuari */
-  	  signalS(p_shared->id_sem_pant);
-  	  /* ^^^ --------------------------------------- ^^^*/
   	  p_usu[n_usu].f = usu.f;		/* memoritza posicio actual */
   	  p_usu[n_usu].c = usu.c;
   	  n_usu++;
 
   	}
+	else
+  	{ 
+  	  /* vvv Secció crítica variables globals vvv */
+  	  waitS(p_shared->id_sem_var);
+  	  p_shared->fi1 = 1;
+  	  signalS(p_shared->id_sem_var);
+  	  /* ^^^ ------------------------------- ^^^*/
+	}
+
+	signalS(p_shared->id_sem_pant);
+	/*^^^ SC Pantalla ^^^*/
 		
 	
 	win_retard(retard);
 
   } while((p_shared->fi1 == 0) && (p_shared->fi2 != 0) && !retorn);
 
-  esborrar_posicions(p_usu, n_usu, 1);
+  esborrar_posicions(p_usu, n_usu);
 
   return ((void *)(intptr_t)0);
 
@@ -414,18 +431,24 @@ int main(int n_args, const char *ll_args[])
   win_update();
   pthread_create(&tid, NULL, mou_usuari, NULL); 
 	
-  int mins, secs, steps;
+  int mins, secs, steps, mode_cnt;
   mins = secs = steps = 0;
+  mode_cnt = 0;		// initialize mode counter
   char temps[40];
   char strin[90];
   while(p_shared->fi1 == 0 && p_shared->fi2 != 0)
   {
+	/*vvv SC Pantalla vvv */
+	waitS(p_shared->id_sem_pant);
 	win_update();
+	signalS(p_shared->id_sem_pant);
+	/*^^^ SC Pantalla ^^^ */
 	win_retard(10);
 	steps ++;
 	if(steps == 100)
 	{
 		secs ++;
+		mode_cnt ++;
 		steps = 0;
 	}
 	if(secs == 60)
@@ -433,6 +456,13 @@ int main(int n_args, const char *ll_args[])
 		mins ++;
 		secs = 0;
 	}
+
+	if(mode_cnt == 5)	// cada cinc segons
+	{
+		mode = mode ^ 1;	// canviar el estat al contrari
+		mode_cnt = 0;
+	}
+	
 
 	sprintf(temps, "Temps de joc: %d\' %d\'\'", mins, secs);
  	sprintf(strin,"Tecles: \'%c\', \'%c\', \'%c\', \'%c\', RETURN-> sortir\t\t\t\t\t\t%s",

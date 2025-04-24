@@ -42,6 +42,7 @@ typedef struct {		/* variables de finalització compartides */
 	int id_map_mem;			/* ID de la zona de memoria compartida del mapa */
 
 	int fd;
+
 } shared_t;
 
 typedef struct
@@ -63,7 +64,8 @@ int n_opo;
 
 int i_opo;
 
-char mort;
+char mort;		//valor per no repintar si ja ha mort
+char contagiat;		//valor per matar al oponent a través dels threads de "contagi" quan s'infecti el cap
 
 
 void * event_action(void * par)
@@ -84,6 +86,7 @@ void * event_action(void * par)
 				win_retard(30);
 			}
 		}
+		contagiat = 1;
 	}
 	else
 	{
@@ -229,6 +232,7 @@ int main(int argc, char **argv)
   pthread_create(&tid, NULL, event_listener, NULL);
 
   mort = 0; 
+  contagiat = 0;
 
   do
   { 	
@@ -243,6 +247,8 @@ int main(int argc, char **argv)
  	    if (k < varia) canvi = 1;	/* possible canvi de direccio */
  	  }
  	
+	/*vvv SC pantalla vvv*/	
+	waitS(id_sem_pant);	/* Asegurem que en el procés de decisió no es modifica el estat del tauler */
  	if (canvi)		/* si s'ha de canviar de direccio */
  	{
 	  canvi = 0;
@@ -272,28 +278,28 @@ int main(int argc, char **argv)
  	{
  	  opo.f = opo.f + df[opo.d];			/* actualitza posicio */
  	  opo.c = opo.c + dc[opo.d];
-	  /* vvv secció crítica d'escriptura de pantalla vvv*/
-	  waitS(id_sem_pant);
  	  win_escricar(opo.f,opo.c,i_opo+1+'0',INVERS);	/* dibuixa bloc oponent */
-	  signalS(id_sem_pant);
-	  /* ^^^ secció crítica d'escriptura de pantalla ^^^ */
  	  p_opo[n_opo].f = opo.f;			/* memoritza posicio actual */
  	  p_opo[n_opo].c = opo.c;
  	  n_opo++;
  	}
  	else
 	{
-		/* vvv Secció crítica variables globals vvv */
-		waitS(id_sem_var);
-		p_shared->fi2 = p_shared->fi2-1;
-		signalS(id_sem_var);
-		/* ^^^----------------------------------^^^ */
+		retorn = 1;
 	}
+	signalS(id_sem_pant);
+	/*^^^ SC pantalla ^^^*/
 
 	
 	int retard_aleat = retard_min + (rand() % (retard_max-retard_min)); 		
 	win_retard(retard_aleat);
-  }while((p_shared->fi1 == 0) && (p_shared->fi2 != 0) && (retorn == 0));
+  }while((p_shared->fi1 == 0) && (p_shared->fi2 != 0) && (retorn == 0) && (contagiat == 0));
+
+  /* vvv Secció crítica variables globals vvv */
+  waitS(id_sem_var);
+  p_shared->fi2 = p_shared->fi2-1;
+  signalS(id_sem_var);
+  /* ^^^----------------------------------^^^ */
 
   mort = 1;
   esborrar_posicions(p_opo, n_opo);
