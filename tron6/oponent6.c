@@ -165,7 +165,7 @@ void esborrar_posicions(pos p_pos[], int n_pos)
     if(win_quincar(p_pos[i].f, p_pos[i].c) == 'X')
     {
 	
-    	win_escricar(p_pos[i].f,p_pos[i].c,'0',INVERS);	/* esborra una pos. */
+    	win_escricar(p_pos[i].f,p_pos[i].c,'x',INVERS);	/* esborra una pos. */
     }
     else
     {

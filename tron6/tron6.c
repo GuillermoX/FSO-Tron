@@ -62,6 +62,8 @@
 #include "../missatge.h"
 
 #define MAX_OPO 9		/* màxim nombre d'oponents */
+#define CAR_MODE_0 '0'
+#define CAR_MODE_1 'Z'
 
 				/* definir estructures d'informacio */
 typedef struct {		/* per un tron (usuari o oponent) */
@@ -188,6 +190,27 @@ void inicialitza_joc(void)
 }
 
 
+void * mode_contagi_usuari(void * mode)
+{
+	int mod = *(int*)mode;
+	char car = CAR_MODE_0;
+	char caract;
+	if(mod) car = CAR_MODE_1;
+	for(int i = n_usu; i >= 0 && p_shared->fi1 == 0; i--)
+	{
+		waitS(p_shared->id_sem_pant);
+		caract = win_quincar(p_usu[i].f, p_usu[i].c);
+		if(caract != 'X') win_escricar(p_usu[i].f, p_usu[i].c, car, INVERS);
+		signalS(p_shared->id_sem_pant);
+		win_retard(10);
+	}
+
+	return NULL;
+	
+}
+
+
+
 /* funcio per moure l'usuari una posicio, en funcio de la direccio de   */
 /* moviment actual; retorna -1 si s'ha premut RETURN, 1 si ha xocat     */
 /* contra alguna cosa, i 0 altrament */
@@ -227,9 +250,12 @@ void * mou_usuari(void * i)
   	cars = win_quincar(seg.f,seg.c);	/* calcular caracter seguent posicio */
 	carsact = win_quincar(usu.f, usu.c);	/* veure quin és l'ultim caracter colocat */
 
-	if (cars == ' ' || (cars != ' ' && mode && carsact != 'X'))			/* si seguent posicio lliure o oponent*/
+	if (cars == ' ' || (mode && cars != ' ' && cars != CAR_MODE_0 && 
+	    cars != CAR_MODE_1 && cars != '+' && carsact != 'X'))			/* si seguent posicio lliure o oponent*/
   	{
-	  char segchar = '0';
+	  
+	  char segchar = CAR_MODE_0;
+	  if(mode) segchar = CAR_MODE_1;
   	  usu.f = seg.f; usu.c = seg.c;		/* actualitza posicio */
 
 	  if(cars != ' ')	/* si hi ha un oponent */
@@ -460,7 +486,9 @@ int main(int n_args, const char *ll_args[])
 	if(mode_cnt == 5)	// cada cinc segons
 	{
 		mode = mode ^ 1;	// canviar el estat al contrari
-		mode_cnt = 0;
+		mode_cnt = 0;	
+		pthread_t tid;
+		pthread_create(&tid, NULL, mode_contagi_usuari, (void*)&mode);
 	}
 	
 
