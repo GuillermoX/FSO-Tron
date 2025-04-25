@@ -67,6 +67,7 @@ int i_opo;
 char mort;		//valor per no repintar si ja ha mort
 char contagiat;		//valor per matar al oponent a través dels threads de "contagi" quan s'infecti el cap
 
+pthread_mutex_t mutex_pos_opo = PTHREAD_MUTEX_INITIALIZER;	//Semafor per l'accés a variables globals
 
 void * event_action(void * par)
 {
@@ -78,11 +79,17 @@ void * event_action(void * par)
 		if(i != n_opo)	//si no es la primera posició (cap)
 		{
 			for(int j = i+1; j < n_opo && (mort == 0); j++)
-			{		
-				waitS(id_sem_pant);
+			{			
+				/*vvv SC Pantalla */
+				waitS(id_sem_pant);		
+				/*vvv SC Threads variables glob vvv */
+				pthread_mutex_lock(&mutex_pos_opo);
 				segchar = win_quincar(p_opo[j].f, p_opo[j].c);
 				if(segchar != 'X') win_escricar(p_opo[j].f, p_opo[j].c, i_opo+'A', INVERS);
+				pthread_mutex_unlock(&mutex_pos_opo);	
+				/*^^^ SC Threads variables glob ^^^ */
 				signalS(id_sem_pant);
+				/*^^^ SC Pantalla ^^^*/
 				win_retard(30);
 			}
 		}
@@ -94,10 +101,16 @@ void * event_action(void * par)
 		{
 			for(int j = i-1; j >= 0 && (mort == 0); j--)
 			{		
-				waitS(id_sem_pant);	
+				/*vvv SC Pantalla */
+				waitS(id_sem_pant);		
+				/*vvv SC Threads variables glob vvv */
+				pthread_mutex_lock(&mutex_pos_opo);
 				segchar = win_quincar(p_opo[j].f, p_opo[j].c);
 				if(segchar != 'X') win_escricar(p_opo[j].f, p_opo[j].c, i_opo+'a', INVERS);
+				pthread_mutex_unlock(&mutex_pos_opo);
+				/*^^^ SC Threads variables glob ^^^ */
 				signalS(id_sem_pant);
+				/*^^^ SC Pantalla ^^^*/
 				win_retard(30);
 			}
 		}
@@ -121,8 +134,12 @@ void * event_listener(void * i)
 		int i = 0;
 		while(i < n_opo && trobat == 0)
 		{
+			/*vvv SC Thread variables glob vvv */
+			pthread_mutex_lock(&mutex_pos_opo);
 			trobat = (p_opo[i].c == position.c) && (p_opo[i].f == position.f);
 			i++;
+			if(!trobat) pthread_mutex_unlock(&mutex_pos_opo);	// si no l'ha trobat alliberem el recurs a cada cicle del bucle
+			/*1 ^^^ SC Thread variables glob ^^^ */
 		}
 		i--;
 
@@ -141,7 +158,8 @@ void * event_listener(void * i)
 			pthread_create(&tid1, NULL, event_action, (void*)param1);
 			pthread_create(&tid2, NULL, event_action, (void*)param2);
 
-			
+			pthread_mutex_unlock(&mutex_pos_opo);	// alliberem el recurs quan s'ha acabat de tractar	
+			/*2 ^^^ SC Thread variables glob ^^^*/
 
 
 		}
@@ -162,6 +180,8 @@ void esborrar_posicions(pos p_pos[], int n_pos)
     
     /* vvv secció crítica d'escriptura de pantalla vvv*/
     waitS(id_sem_pant); 
+    /* no cal sincronitzar la consulta a variable global ja que només el main thread pot modificar-lo
+       per tant estem segurs de que no es modificará*/
     if(win_quincar(p_pos[i].f, p_pos[i].c) == 'X')
     {
 	
@@ -217,6 +237,9 @@ int main(int argc, char **argv)
 
   /*obtenir el id de la bústia*/
   id_bust = p_shared->id_bust[i_opo];
+
+  /* crear semafors pthread */
+  pthread_mutex_init(&mutex_pos_opo, NULL);
 
   char cars;
   tron seg;
@@ -279,8 +302,12 @@ int main(int argc, char **argv)
  	  opo.f = opo.f + df[opo.d];			/* actualitza posicio */
  	  opo.c = opo.c + dc[opo.d];
  	  win_escricar(opo.f,opo.c,i_opo+1+'0',INVERS);	/* dibuixa bloc oponent */
+	  /*vvv SC Thread variable glob vvv */
+	  pthread_mutex_lock(&mutex_pos_opo);
  	  p_opo[n_opo].f = opo.f;			/* memoritza posicio actual */
  	  p_opo[n_opo].c = opo.c;
+	  pthread_mutex_unlock(&mutex_pos_opo);
+	  /*^^^ SC Thread variable glob ^^^ */
  	  n_opo++;
  	}
  	else
@@ -308,9 +335,9 @@ int main(int argc, char **argv)
   {
     FILE *fd = fdopen(p_shared->fd, "w");
     // el process escriu informació al fitxer abans de finalitzar
-    // vvv secció crítica accés al fitxer vvv 
     if(p_shared->fd != 0)
     {
+    	// vvv secció crítica accés al fitxer vvv 
    	waitS(id_sem_fit);
    	fprintf(fd, "Fill id: %d, i_opo: %d\n", getpid(), i_opo+1);	
    	fprintf(fd, "Longitud: %d\n", n_opo);
@@ -318,9 +345,11 @@ int main(int argc, char **argv)
    	if(p_shared->fi1 == 0) fprintf(fd, "Mort propia\n\n");
    	else fprintf(fd, "Mort jugador humà\n\n");
    	signalS(id_sem_fit);
+    	// ^^^ secció crítica accés al fitxer ^^^
     }
-    // ^^^ secció crítica accés al fitxer ^^^
   }
+
+  pthread_mutex_destroy(&mutex_pos_opo);
 	
   return 0;
 }
