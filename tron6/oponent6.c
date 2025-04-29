@@ -1,4 +1,6 @@
 
+#define _REENTRANT
+
 #include <stdio.h>		/* incloure definicions de funcions estandard */
 #include <stdlib.h>
 #include <unistd.h>
@@ -149,6 +151,7 @@ void * event_listener(void * i)
 			action_param_t *param1 = malloc(sizeof(action_param_t));
 			param1->dir = 0;		//direcció cap
 			param1->i = i;
+
 
 			pthread_t tid2;
 			action_param_t *param2  = malloc(sizeof(action_param_t));

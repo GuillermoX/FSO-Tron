@@ -243,49 +243,66 @@ void * mou_usuari(void * i)
 				/* ^^^ SC variables final ^^^*/
 				break;
   	 }
-  	seg.f = usu.f + df[usu.d];	/* calcular seguent posicio */
-  	seg.c = usu.c + dc[usu.d];
-	/* vvv SC Pantalla vvv*/
-	waitS(p_shared->id_sem_pant);	/* Asegurem que el tauler no es modifica desde que obtenim el seu estat fins que el usuari el pinta*/
-  	cars = win_quincar(seg.f,seg.c);	/* calcular caracter seguent posicio */
-	carsact = win_quincar(usu.f, usu.c);	/* veure quin és l'ultim caracter colocat */
+	
+	int interferencia = 0;	// Indicador si hi ha hagut un canvi de la posició entre que calculem la següent i la gravem a pantalla i memoria	
 
-	if (cars == ' ' || (mode && cars != ' ' && cars != CAR_MODE_0 && 
-	    cars != CAR_MODE_1 && cars != '+' && carsact != 'X'))			/* si seguent posicio lliure o oponent*/
-  	{
-	  
-	  char segchar = CAR_MODE_0;
-	  if(mode) segchar = CAR_MODE_1;
-  	  usu.f = seg.f; usu.c = seg.c;		/* actualitza posicio */
+	do{
 
-	  if(cars != ' ')	/* si hi ha un oponent */
-	  {
-		for(int i = 0; i < num_opo; i++)
-		{	
-			// es comunica a tots els oponents el lloc del choc
-			sendM(p_shared->id_bust[i], (void*)&usu, sizeof(pos));
+		seg.f = usu.f + df[usu.d];	/* calcular seguent posicio */
+		seg.c = usu.c + dc[usu.d];
+		/* vvv SC Pantalla vvv*/
+		waitS(p_shared->id_sem_pant);	/* Asegurem que el tauler no es modifica desde que obtenim el seu estat fins que el usuari el pinta*/
+		cars = win_quincar(seg.f,seg.c);	/* calcular caracter seguent posicio */
+		carsact = win_quincar(usu.f, usu.c);	/* veure quin és l'ultim caracter colocat */
+		signalS(p_shared->id_sem_pant);
+		/* ^^^ SC Pantalla ^^^ */
+		
+		if (cars == ' ' || (mode && cars != ' ' && cars != CAR_MODE_0 && 
+		    cars != CAR_MODE_1 && cars != '+' && carsact != 'X'))			/* si seguent posicio lliure o oponent*/
+		{
+		  
+		  char segchar = CAR_MODE_0;
+		  if(mode) segchar = CAR_MODE_1;
+		  usu.f = seg.f; usu.c = seg.c;		/* actualitza posicio */
+		
+		  if(cars != ' ')	/* si hi ha un oponent */
+		  {
+			for(int i = 0; i < num_opo; i++)
+			{	
+				// es comunica a tots els oponents el lloc del choc
+				sendM(p_shared->id_bust[i], (void*)&usu, sizeof(pos));
+			}
+			segchar = 'X';
+		
+		  }
+			
+		  waitS(p_shared->id_sem_pant);
+		  if(win_quincar(usu.f, usu.c) == cars)		//Si no ha cambiat el caracter on estava mirant
+		  {	
+		 	win_escricar(usu.f,usu.c,segchar,INVERS);	/* dibuixa bloc usuari */
+		 	p_usu[n_usu].f = usu.f;		/* memoritza posicio actual */
+		 	p_usu[n_usu].c = usu.c;
+		 	n_usu++;
+		  }
+		  else		//Si ha canviat
+		  {
+			//Revertir el canvi
+			usu.f = usu.f - df[usu.d];
+			usu.c = usu.c - df[usu.d];	
+			interferencia = 1;
+		  }
+		  signalS(p_shared->id_sem_pant);
+		
 		}
-		segchar = 'X';
-
-	  }
-  	
-  	  win_escricar(usu.f,usu.c,segchar,INVERS);	/* dibuixa bloc usuari */
-  	  p_usu[n_usu].f = usu.f;		/* memoritza posicio actual */
-  	  p_usu[n_usu].c = usu.c;
-  	  n_usu++;
-
-  	}
-	else
-  	{ 
-  	  /* vvv Secció crítica variables globals vvv */
-  	  waitS(p_shared->id_sem_var);
-  	  p_shared->fi1 = 1;
-  	  signalS(p_shared->id_sem_var);
-  	  /* ^^^ ------------------------------- ^^^*/
-	}
-
-	signalS(p_shared->id_sem_pant);
-	/*^^^ SC Pantalla ^^^*/
+		else
+		{ 
+		  /* vvv Secció crítica variables globals vvv */
+		  waitS(p_shared->id_sem_var);
+		  p_shared->fi1 = 1;
+		  signalS(p_shared->id_sem_var);
+		  /* ^^^ ------------------------------- ^^^*/
+		}
+	}while(interferencia);
 		
 	
 	win_retard(retard);
@@ -383,25 +400,34 @@ int main(int n_args, const char *ll_args[])
      exit(2);
   }
 
-  /* si s'ha creat el taulell reservem memoria compartida pel mapa i guardem l'ID a la memoria compartida */
-  p_shared->id_map_mem = ini_mem(retwin);
-  p_map = map_mem(p_shared->id_map_mem);
-  win_set(p_map, n_fil, n_col);
   
 
   p_usu = calloc(n_fil*n_col/2, sizeof(pos));	/* demana memoria dinamica */
+  if(!p_usu)
+  {
+	win_fi();
+	free(p_usu);
+	fprintf(stderr, "Error en alocatacion de memoria dinamica del usuari");
+	exit(3);
+  }
+
   for(int i = 0; i < num_opo; i++)
   {
  	p_opo[i] = calloc(n_fil*n_col/2, sizeof(pos));	/* per a les posicions ant. */
- 	if (!p_usu || !p_opo[i])	/* si no hi ha prou memoria per als vectors de pos. */
- 	{ win_fi();				/* tanca les curses */
- 	  if (p_usu) free(p_usu);
+ 	if (!p_opo[i])	/* si no hi ha prou memoria per als vectors de pos. */
+ 	{ 
+	  win_fi();				/* tanca les curses */
  	  if (p_opo[i]) free(p_opo[i]);	   /* allibera el que hagi pogut obtenir */
  	  fprintf(stderr,"Error en alocatacion de memoria dinamica.\n");
  	  exit(3);
  	}
   }
 			/* Fins aqui tot ha anat be! */
+
+  /* si s'ha creat el taulell reservem memoria compartida pel mapa i guardem l'ID a la memoria compartida */
+  p_shared->id_map_mem = ini_mem(retwin);
+  p_map = map_mem(p_shared->id_map_mem);
+  win_set(p_map, n_fil, n_col);
 
   inicialitza_joc();
 
@@ -454,7 +480,7 @@ int main(int n_args, const char *ll_args[])
  
   pthread_t tid;  
   int t;
-  win_update();
+  //win_update();
   pthread_create(&tid, NULL, mou_usuari, NULL); 
 	
   int mins, secs, steps, mode_cnt;
