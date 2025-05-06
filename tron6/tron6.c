@@ -196,7 +196,7 @@ void * mode_contagi_usuari(void * mode)
 	char car = CAR_MODE_0;
 	char caract;
 	if(mod) car = CAR_MODE_1;
-	for(int i = n_usu; i >= 0 && p_shared->fi1 == 0; i--)
+	for(int i = n_usu-1; i >= 0 && p_shared->fi1 == 0; i--)
 	{
 		waitS(p_shared->id_sem_pant);
 		caract = win_quincar(p_usu[i].f, p_usu[i].c);
